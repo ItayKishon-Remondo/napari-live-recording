@@ -50,7 +50,8 @@ class MainController(QObject):
         deviceController = LocalController(thread, camera)
         self.deviceControllers[cameraKey] = deviceController
         self.deviceControllers[cameraKey].thread.start()
-        self.deviceLiveBuffer[cameraKey] = np.zeros(shape=camera.roiShape.pixelSizes, dtype=np.uint16)
+        if camera.roiShape:
+            self.deviceLiveBuffer[cameraKey] = np.zeros(shape=camera.roiShape.pixelSizes, dtype=np.uint16)
         self.recordSignalCounter.maxCount += 1
         return cameraKey
 

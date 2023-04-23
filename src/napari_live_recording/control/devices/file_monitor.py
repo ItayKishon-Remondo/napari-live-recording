@@ -10,80 +10,79 @@ from napari_live_recording.control.devices.interface import (
 from typing import Union, Any
 from sys import platform
 
+import time
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+from tifffile import imread
+from queue import LifoQueue
+
+last_image_queue = LifoQueue(maxsize=1)
+
 class FileMonitor(ICamera):
 
-    msExposure = {
-        "1 s":  0,
-        "500 ms": -1,
-        "250 ms": -2,
-        "125 ms": -3,
-        "62.5 ms": -4,
-        "31.3 ms": -5,
-        "15.6 ms": -6, # default
-        "7.8 ms": -7,
-        "3.9 ms": -8,
-        "2 ms": -9,
-        "976.6 us": -10,
-        "488.3 us": -11,
-        "244.1 us": -12,
-        "122.1 us": -13
-    }
-
-    pixelFormats = {
-        "RGB" : cv2.COLOR_BGR2RGB, # default
-        "RGBA" : cv2.COLOR_BGR2RGBA,
-        "BGR" : None,
-        "Grayscale" : cv2.COLOR_RGB2GRAY
-    }
+    class Handler(FileSystemEventHandler):
+        @staticmethod
+        def on_any_event(event):
+            global last_image_queue
+            if event.src_path.endswith('.tiff'):
+                try:
+                    last_image = imread(event.src_path)
+                    if len(last_image) > 0:
+                        last_image_queue.put(last_image)
+                        # print(f"Yo! {event.src_path} 's shape is {last_image.shape}, {last_image.mean()}")
+                except:
+                    print("Unable to read file...")
+            else:
+                print("Unknown dispathch", event.src_path)
 
     def __init__(self, name: str, deviceID: Union[str, int]) -> None:
-        """OpenCV VideoCapture wrapper.
+        """File Monitor wrapper.
 
         Args:
-            name (str): user-defined camera name.
-            deviceID (Union[str, int]): camera identifier.
+            name (str): user-defined camera/stream name.
+            deviceID (Union[str, int]): path for monitored file(s).
         """
-        self.__capture = cv2.VideoCapture(int(deviceID))
 
-        # read OpenCV parameters
-        width = int(self.__capture.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(self.__capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        
-        # initialize region of interest
-        # steps for height, width and offsets
-        # are by default 1. We leave them as such
-        sensorShape = ROI(offset_x=0, offset_y=0, height=height, width=width)
+        # # initialize region of interest
+        # # steps for height, width and offsets
+        # # are by default 1. We leave them as such
+        # sensorShape = ROI(offset_x=0, offset_y=0, height=9999, width=9999)
         
         parameters = {}
+        path = deviceID
 
-        # exposure time in OpenCV is treated differently on Windows, 
-        # as exposure times may only have a finite set of values
-        if platform.startswith("win"):
-            parameters["Exposure time"] = ListParameter(value=self.msExposure["15.6 ms"], 
-                                                        options=list(self.msExposure.keys()), 
-                                                        editable=True)
-        else:
-            parameters["Exposure time"] = NumberParameter(value=10e-3,
-                                                        valueLimits=(100e-6, 1),
-                                                        unit="s",
-                                                        editable=True)
-        parameters["Pixel format"] = ListParameter(value=self.pixelFormats["RGB"],
-                                                options=list(self.pixelFormats.keys()),
-                                                editable=True)
+        self._observer = Observer()
+        self._observer.schedule(self.Handler(), path, recursive=True)
+        self._observer.start()
 
-        self.__format = self.pixelFormats["RGB"]
-        super().__init__(name, deviceID, parameters, sensorShape)
+        # # exposure time in OpenCV is treated differently on Windows, 
+        # # as exposure times may only have a finite set of values
+        # if platform.startswith("win"):
+        #     parameters["Exposure time"] = ListParameter(value=self.msExposure["15.6 ms"], 
+        #                                                 options=list(self.msExposure.keys()), 
+        #                                                 editable=True)
+        # else:
+        #     parameters["Exposure time"] = NumberParameter(value=10e-3,
+        #                                                 valueLimits=(100e-6, 1),
+        #                                                 unit="s",
+        #                                                 editable=True)
+        # parameters["Pixel format"] = ListParameter(value=self.pixelFormats["RGB"],
+        #                                         options=list(self.pixelFormats.keys()),
+        #                                         editable=True)
+
+        # self.__format = self.pixelFormats["RGB"]
+        super().__init__(name, deviceID, parameters, sensorShape=None)
     
     def setAcquisitionStatus(self, started: bool) -> None:
         pass
     
     def grabFrame(self) -> np.ndarray:
-        _, img = self.__capture.read()
-        y, h = self.roiShape.offset_y, self.roiShape.offset_y + self.roiShape.height
-        x, w = self.roiShape.offset_x, self.roiShape.offset_x + self.roiShape.width
-        img = img[y:h, x:w]
-        img = (cv2.cvtColor(img, self.__format) if self.__format is not None else img)
-        return img
+        # img = np.random.random(size=(500,500))
+        while last_image_queue.empty():
+            time.sleep(0.05)
+        last_image = last_image_queue.get()
+        print(f"image: {last_image.shape}, {last_image.dtype}, {last_image.mean()}")
+        return last_image
     
     def changeParameter(self, name: str, value: Any) -> None:
         if name == "Exposure time":
@@ -99,4 +98,7 @@ class FileMonitor(ICamera):
             self.roiShape = newROI
     
     def close(self) -> None:
-        self.__capture.release()
+        print("Closing the file monitor...")
+        self._observer.stop()
+        self._observer.join()
+        print("Done.")

@@ -42,7 +42,7 @@ class ListParameter(Parameter):
     
 
 class ICamera(QObject):
-    def __init__(self, name: str, deviceID: Union[str, int], parameters: Dict[str, Any], sensorShape: ROI) -> None:
+    def __init__(self, name: str, deviceID: Union[str, int], parameters: Dict[str, Any], sensorShape: Union[ROI, None]) -> None:
         """Generic camera device interface. Each device is initialized with a series of parameters.
         Live and recording are handled using child thread workers.
         
