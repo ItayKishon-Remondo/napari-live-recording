@@ -56,9 +56,10 @@ class ViewerAnchor:
 
         self.mainController.addCamera(cameraKey, camera)
         
-        roiWidget = ROIHandling(camera.fullShape)
-        roiWidget.signals["changeROIRequested"].connect(lambda roi: camera.changeROI(roi))
-        roiWidget.signals["fullROIRequested"].connect(lambda roi: camera.changeROI(roi))
+        if camera.roiShape:
+            roiWidget = ROIHandling(camera.fullShape)
+            roiWidget.signals["changeROIRequested"].connect(lambda roi: camera.changeROI(roi))
+            roiWidget.signals["fullROIRequested"].connect(lambda roi: camera.changeROI(roi))
         for name, parameter in camera.parameters.items():
             if type(parameter) == NumberParameter:
                 widget = LabeledSlider((*parameter.valueLimits, parameter.value), name, parameter.unit)
@@ -70,7 +71,8 @@ class ViewerAnchor:
         deleteButton = QPushButton("Delete camera")
         deleteButton.clicked.connect(lambda: self.deleteCameraUI(cameraKey))
         settingsLayout.addRow(deleteButton)
-        settingsLayout.addRow(roiWidget)
+        if camera.roiShape:
+            settingsLayout.addRow(roiWidget)
         settingsGroup.setLayout(settingsLayout)
 
         cameraCollapsible.addWidget(settingsGroup)
